@@ -1,7 +1,7 @@
 import os
 import markdown
 from docx import Document
-from docx.shared import Inches
+from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import RGBColor
@@ -9,6 +9,13 @@ from bs4 import BeautifulSoup
 import re
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+import requests
+from io import BytesIO
+
+def latex_to_png_url(latex):
+    # 使用codecogs在线服务渲染LaTeX公式
+    base_url = "https://latex.codecogs.com/png.latex?"
+    return base_url + requests.utils.quote(latex)
 
 def convert_md_to_docx(md_file, docx_file):
     # 读取Markdown文件
@@ -29,12 +36,31 @@ def convert_md_to_docx(md_file, docx_file):
             level = int(element.name[1])
             paragraph = doc.add_heading(element.text, level=level)
         elif element.name == 'p':
-            # 检查段落是否只包含图片
-            if element.find('img') and len(element.contents) == 1:
-                img = element.find('img')
-                add_image_to_doc(doc, img['src'], md_file)
+            # 检查段落是否包含LaTeX公式
+            latex_matches = re.findall(r'\$\$(.*?)\$\$', element.text)
+            if latex_matches:
+                paragraph = doc.add_paragraph()
+                for latex in latex_matches:
+                    # 获取LaTeX公式的图片URL
+                    img_url = latex_to_png_url(latex)
+                    # 下载图片
+                    response = requests.get(img_url)
+                    img_data = BytesIO(response.content)
+                    # 添加图片到文档，设置高度为15pt（约等于小3号字体大小）
+                    run = paragraph.add_run()
+                    run.add_picture(img_data, height=Pt(15))
+                    run.add_text(" ")  # 在公式之间添加空格
+                # 添加剩余的文本
+                remaining_text = re.sub(r'\$\$.*?\$\$', '', element.text)
+                if remaining_text.strip():
+                    paragraph.add_run(remaining_text.strip())
             else:
-                paragraph = doc.add_paragraph(element.get_text())
+                # 如果段落只包含图片，直接添加图片
+                if element.find('img') and len(element.contents) == 1:
+                    img = element.find('img')
+                    add_image_to_doc(doc, img['src'], md_file)
+                else:
+                    paragraph = doc.add_paragraph(element.get_text())
         elif element.name in ['ul', 'ol']:
             for li in element.find_all('li'):
                 # 检查是否为编号列表项
@@ -67,7 +93,9 @@ def convert_md_to_docx(md_file, docx_file):
 
 def add_image_to_doc(doc, img_src, md_file):
     if img_src.startswith('http'):
-        doc.add_picture(img_src, width=Inches(6))
+        response = requests.get(img_src)
+        img_data = BytesIO(response.content)
+        doc.add_picture(img_data, width=Inches(6))
     else:
         img_path = os.path.join(os.path.dirname(md_file), img_src)
         if os.path.exists(img_path):
