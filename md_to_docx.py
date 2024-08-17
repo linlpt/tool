@@ -22,17 +22,21 @@ def convert_md_to_docx(md_file):
     with open(md_file, 'r', encoding='utf-8') as f:
         md_content = f.read()
 
-    html = markdown.markdown(md_content, extensions=['fenced_code', 'codehilite'])
+    # 使用 'extra' 扩展来更好地处理列表
+    html = markdown.markdown(md_content, extensions=['fenced_code', 'codehilite', 'extra'])
     soup = BeautifulSoup(html, 'html.parser')
 
     doc = Document()
     md_dir = os.path.dirname(md_file)
 
-    for elem in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'pre']):
+    for elem in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'pre', 'ul', 'ol']):
         if elem.name == 'pre':
             code = elem.find('code')
             if code:
                 add_code_block(doc, code.text)
+        elif elem.name in ['ul', 'ol']:
+            for li in elem.find_all('li'):
+                p = doc.add_paragraph(li.text, style='List Bullet' if elem.name == 'ul' else 'List Number')
         elif elem.name == 'p':
             p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.LEFT
@@ -40,7 +44,7 @@ def convert_md_to_docx(md_file):
             level = int(elem.name[1])
             p = doc.add_heading(level=level)
 
-        if elem.name != 'pre':
+        if elem.name not in ['pre', 'ul', 'ol']:
             for content in elem.contents:
                 if content.name == 'img':
                     img_src = content['src']
